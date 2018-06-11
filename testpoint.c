@@ -189,8 +189,7 @@ int increment_state(test_state_t state) {
 /* print the formatted output passed into a test point function,
  * increment the occurrence count of the passed in "state" */
  /* maybe store every message in a database? XXX */
- /* XXX either dup2() the fd or make it so you can pass in a fd of your own for output, will make this loads easier to test */
-int __printf (test_state_t state, char *apiMessage, char * str, ...)
+int __printf (FILE * filestream, test_state_t state, char *apiMessage, char * str, ...)
 {
 	va_list arg;
 	
@@ -214,11 +213,11 @@ int __printf (test_state_t state, char *apiMessage, char * str, ...)
 	*/
 	/* vsprintf may be able to help you XXX */
 	va_start (arg, str);
-	fprintf(stdout, "%s:\t", apiMessage);
-	vfprintf(stdout, str, arg);
-	fprintf(stdout, "\n");
+	fprintf(filestream, "%s:\t", apiMessage);
+	vfprintf(filestream, str, arg);
+	fprintf(filestream, "\n");
 	va_end (arg);
-	fflush(stdout);
+	fflush(filestream);
 	
 	/* to ensure only one message is ever printed at a time,
 	 * lock the exclusive print mutex */
@@ -265,36 +264,36 @@ int testinit() {
 }
 	
 int testnote(char * str) {
-	return __printf(POINT, "NOTE", str);
+	return __printf(stdout, POINT, "NOTE", str);
 }
 
 int teststart(char * str) {
 
 	/* if successfully initialize shared memory, print start message */
 	if (testinit() == EXIT_SUCCESS) {
-		return __printf(POINT, "START", str);
+		return __printf(stdout, POINT, "START", str);
 	}
 	return EXIT_FAILURE;
 }
 
 int pointstart(char * str) {
-	return __printf(POINT, "TEST", str);
+	return __printf(stdout, POINT, "TEST", str);
 }
 
 int pointpass(char * str) {
-	return __printf(PASS, "PASS", str);
+	return __printf(stdout, PASS, "PASS", str);
 }
 
 int pointfail(char * str) {
-	return __printf(FAIL, "FAIL", str);
+	return __printf(stdout, FAIL, "FAIL", str);
 }
 
 int pointerrormsg(char *str) {
-	return __printf(ERROR, "ERROR", str);
+	return __printf(stdout, ERROR, "ERROR", str);
 }
 
 int pointunres(char * str) {
-	return __printf(UNRES, "UNRES", str);
+	return __printf(stdout, UNRES, "UNRES", str);
 }
 
 int pointdone() {
