@@ -52,45 +52,58 @@ typedef enum {
 
 typedef struct {
 	long test_results[NUMBER_OF_STATES]; /* array indexed by test_state_t */
-	pthread_mutex_t mutexes[NUMBER_OF_STATES];
+	pthread_mutex_t mutexes[NUMBER_OF_STATES]; /* lock to modify test_results */
+	pthread_mutex_t exclusive_print; /* lock so only one test point message can occur at a time */
 } test_info_t;
 
 /* in shared memory */
 test_info_t * test_info = NULL;
 
-
-/* you're error checking other print statements, why not these? XXX DONT BOTHER!!*/
+/* print out a descriptive error message */
 void error_print(char *funcName, int rc) {
 	fprintf(stderr, "%s() failed in point api: %d %s\n", funcName,
 		rc, strerror(rc));
 	fflush(stderr);
 }
 
-/* XXX are we sure errno is correct for pthread funcs? */
+/* sets values in shared memory to defaults, initializes mutexes */
 int init_test_info() {
 	pthread_mutexattr_t attr;
+	int rc;
 	
 	/* setup test_info */
 	if (test_info) {
 		memset(test_info, 0, sizeof(test_info_t));
 		
-		if (pthread_mutexattr_init(&attr) != EOK) {
-			error_print("pthread_mutexattr_init", errno);
+		/* create attributes */
+		if ((rc = pthread_mutexattr_init(&attr)) != EOK) {
+			error_print("pthread_mutexattr_init", rc);
 			return EXIT_FAILURE;
 		}
 		
-		if (pthread_mutexattr_setpshared(&attr, 
-			PTHREAD_PROCESS_SHARED) != EOK) {
-			error_print("pthread_mutexattr_setpshared", errno);
+		/* as this will be shared across processes, must set
+		 * PTHREAD_PROCESS_SHARED */
+		if ((rc = pthread_mutexattr_setpshared(&attr, 
+			PTHREAD_PROCESS_SHARED)) != EOK) {
+			error_print("pthread_mutexattr_setpshared", rc);
 			return EXIT_FAILURE;
 		}
 		
+		/* initialize mutexes */
 		for (int i = PASS; i < NUMBER_OF_STATES; i++) {
-			if (pthread_mutex_init(&test_info->mutexes[i], &attr) != EOK) {
-				error_print("pthread_mutex_init", errno);
+			if ((rc = pthread_mutex_init(&test_info->mutexes[i], &attr)) != EOK) {
+				error_print("pthread_mutex_init", rc);
 				return EXIT_FAILURE;
 			}
 		}
+		
+		/* initialize mutex for exclusive printing */
+		//XXX #define EXCLUSIVE_PRINTING 
+		if ((rc = pthread_mutex_init(&test_info->exclusive_print, &attr)) != EOK) {
+			error_print("pthread_mutex_init", rc);
+			return EXIT_FAILURE;
+		}
+		
 		return EXIT_SUCCESS;
 	}
 	return EXIT_FAILURE;
@@ -152,59 +165,34 @@ int init_shared_memory() {
 	return EXIT_SUCCESS;
 }
 
-/*
+
 int increment_state(test_state_t state) {
-	if (test_info == NULL) {
-		printf("ERROR\ttest_info not initialized. "
-			"Make sure to call teststart()\n");
-		return EXIT_FAILURE;
-	}
-	
-	// increase occurrence of passed in state 
+
+	/* increase occurrence of passed in state */
 	if (pthread_mutex_lock(&test_info->mutexes[state]) != EOK) {
 		printf("pthread_mutex_lock"); //XXX
 		return EXIT_FAILURE;
 	}
+	
 	test_info->test_results[state]++;
 
 	if (pthread_mutex_unlock(&test_info->mutexes[state]) != EOK) {
 		printf("pthread_mutex_lock"); //XXX
 		return EXIT_FAILURE;
 	}
+	
 	return EXIT_SUCCESS;
+
 }
-*/
+
 
 /* print the formatted output passed into a test point function,
  * increment the occurrence count of the passed in "state" */
+ /* maybe store every message in a database? XXX */
+ /* XXX either dup2() the fd or make it so you can pass in a fd of your own for output, will make this loads easier to test */
 int __printf (test_state_t state, char *apiMessage, char * str, ...)
 {
 	va_list arg;
-
-	
-	/* to ensure only one message is ever printed at a time,
-	 * lock the unused POINT mutex */
-	//if (pthread_mutex_lock(&test_info->mutexes[POINT]) != EOK) {
-	//	printf("pthread_mutex_lock"); //XXX
-	//	return EXIT_FAILURE;
-	//}
-	
-	/* print: 
-		apiMessage ":\t" str "\n" 
-	*/
-	
-	va_start (arg, str);
-	fprintf(stdout, "%s:\t", apiMessage);
-	vfprintf(stdout, str, arg);
-	fprintf(stdout, "\n");
-	va_end (arg);
-	fflush(stdout);
-	
-	/* state == POINT indicates we are just printing information
-	and exiting */
-	if (state == POINT) {
-		return EXIT_SUCCESS;
-	}
 	
 	/* if test info is not initialized yet, return EXIT_FAILURE */
 	if (test_info == NULL) {
@@ -212,24 +200,50 @@ int __printf (test_state_t state, char *apiMessage, char * str, ...)
 			"Make sure to call teststart()\n");
     	return EXIT_FAILURE; 
 	}
-	
-	/* increase occurrence of passed in state */
-	if (pthread_mutex_lock(&test_info->mutexes[state]) != EOK) {
-		printf("pthread_mutex_lock"); //XXX
-		return EXIT_FAILURE;
-	}
-	test_info->test_results[state]++;
 
-	if (pthread_mutex_unlock(&test_info->mutexes[state]) != EOK) {
+	/* to ensure only one message is ever printed at a time,
+	 * lock the exclusive print mutex */
+	 //XXX #define EXCLUSIVE_PRINTING
+	if (pthread_mutex_lock(&test_info->exclusive_print) != EOK) {
 		printf("pthread_mutex_lock"); //XXX
 		return EXIT_FAILURE;
 	}
 	
-	//XXX this needs a mutex as well!
+	/* print: 
+		apiMessage ":\t" str "\n" 
+	*/
+	/* vsprintf may be able to help you XXX */
+	va_start (arg, str);
+	fprintf(stdout, "%s:\t", apiMessage);
+	vfprintf(stdout, str, arg);
+	fprintf(stdout, "\n");
+	va_end (arg);
+	fflush(stdout);
+	
+	/* to ensure only one message is ever printed at a time,
+	 * lock the exclusive print mutex */
+	 //XXX #define EXCLUSIVE_PRINTING
+	if (pthread_mutex_unlock(&test_info->exclusive_print) != EOK) {
+		printf("pthread_mutex_unlock"); //XXX
+		return EXIT_FAILURE;
+	}
+	
+	/* state == POINT indicates we are just printing information
+	and exiting XXX could we make this based on apiMessage? although if we end up using vsprintf to pass some 
+	nicely formatted string, that ability would go away */
+	if (state == POINT) {
+		return EXIT_SUCCESS;
+	}
+	
+	/* increment the passed in state */
+	if (increment_state(state) != EXIT_SUCCESS) {
+		return EXIT_FAILURE;
+	}
+	
 	/* if passed in stat is not error, 
 	increase test point count too */
 	if (state != ERROR) {
-		test_info->test_results[POINT]++;
+		return increment_state(POINT);
     }
     
     return EXIT_SUCCESS;
