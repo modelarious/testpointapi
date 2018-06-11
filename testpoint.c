@@ -1,6 +1,4 @@
 /*XXXXXXXXX must be initialized before any forking is done or else the other processes won't be able to access it */
-/* could replace all the "failed in test point api: %d %s, errno, strerror(errno));" with a #define */
-/* need to be different copies of shared memory object so different tests can run concurrently */
 /* timestamp in struct? cleanup goes and looks for old timestamps */
 /* should I dup2() the stderr and stdout file descriptors incase someone closes them? */
 
@@ -36,9 +34,36 @@ print a message and return a failure */
                                             "Make sure to call teststart()\n"); \
                                             return EXIT_FAILURE; \
                                         }
-/* increment the state passed in as "state" and return EXIT_SUCCESS */
-#define increment_state_and_return_success(state) test_info->test_results[state]++; \
-                                                  return EXIT_SUCCESS;
+
+/* will expand into a function that uses va_list to pass in a formatted string to __printf */
+#define point_generic(state, message) \
+	int rc;	\
+	va_list arg; \
+	/* points to the last arg before the elipsis */ \
+	va_start (arg, str); \
+	/* pass the argument list into __printf */ \
+	rc = __printf(arg, stdout, state, message, str); \
+	va_end(arg); \
+	return rc
+/* example of above macro:
+
+int pointpass(char * str, ...) {
+	point_generic(PASS, "PASS");
+}
+
+will become:
+
+int pointpass(char * str, ...) {
+	int rc;
+	va_list arg;
+	// points to the last arg before the elipsis
+	va_start (arg, str);
+	// pass the argument list into __printf
+	rc = __printf(arg, stdout, PASS, "PASS", str);
+	va_end(arg);
+	return rc;
+}
+*/
 
 typedef enum {
 	PASS=0,
@@ -167,7 +192,11 @@ int init_shared_memory() {
 }
 
 
+/* lock associated mutex, increase test point, unlock associated mutex */
 int increment_state(test_state_t state) {
+
+	/* if shared memory is not initialized, fail */
+	return_fail_on_no_shared_memory
 
 	/* increase occurrence of passed in state */
 	if (pthread_mutex_lock(&test_info->mutexes[state]) != EOK) {
@@ -190,17 +219,11 @@ int increment_state(test_state_t state) {
 /* print the formatted output passed into a test point function,
  * increment the occurrence count of the passed in "state" */
  /* maybe store every message in a database? XXX */
-int __printf (FILE * filestream, test_state_t state, char *apiMessage, char * str, ...)
+int __printf (va_list arg, FILE * filestream, test_state_t state, char *apiMessage, char * str)
 {
-	va_list arg;
+	/* if shared memory is not initialized, fail */
+	return_fail_on_no_shared_memory
 	
-	/* if test info is not initialized yet, return EXIT_FAILURE */
-	if (test_info == NULL) {
-		printf("ERROR:\ttest_info not initialized. "
-			"Make sure to call teststart()\n");
-    	return EXIT_FAILURE; 
-	}
-
 	/* to ensure only one message is ever printed at a time,
 	 * lock the exclusive print mutex */
 	 //XXX #define EXCLUSIVE_PRINTING
@@ -213,14 +236,13 @@ int __printf (FILE * filestream, test_state_t state, char *apiMessage, char * st
 		apiMessage ":\t" str "\n" 
 	*/
 	/* vsprintf may be able to help you XXX */
-	va_start (arg, str);
 	fprintf(filestream, "%s:\t", apiMessage);
 	vfprintf(filestream, str, arg);
 	fprintf(filestream, "\n");
 	va_end (arg);
 	fflush(filestream);
-	
-	/* to ensure only one message is ever printed at a time,
+    
+    /* to ensure only one message is ever printed at a time,
 	 * lock the exclusive print mutex */
 	 //XXX #define EXCLUSIVE_PRINTING
 	if (pthread_mutex_unlock(&test_info->exclusive_print) != EOK) {
@@ -250,6 +272,7 @@ int __printf (FILE * filestream, test_state_t state, char *apiMessage, char * st
 
 }
 
+
 int testinit() {
 	/* initialize shared memory and mmap it to test_info pointer */
 	if (init_shared_memory() != EXIT_SUCCESS) {
@@ -264,46 +287,43 @@ int testinit() {
 	return EXIT_SUCCESS;
 }
 	
-int testnote(char * str) {
-	return __printf(stdout, POINT, "NOTE", str);
+int testnote(char * str, ...) {
+	point_generic(POINT, "NOTE");
 }
 
-int teststart(char * str) {
+int teststart(char * str, ...) {
 
 	/* if successfully initialize shared memory, print start message */
 	if (testinit() == EXIT_SUCCESS) {
-		return __printf(stdout, POINT, "START", str);
+		point_generic(POINT, "START");
 	}
 	return EXIT_FAILURE;
 }
 
-int pointstart(char * str) {
-	return __printf(stdout, POINT, "TEST", str);
+int pointstart(char * str, ...) {
+	point_generic(POINT, "TEST");
+}
+	
+int pointpass(char * str, ...) {
+	point_generic(PASS, "PASS");
 }
 
-int pointpass(char * str) {
-	return __printf(stdout, PASS, "PASS", str);
+int pointfail(char * str, ...) {
+	point_generic(FAIL, "FAIL");
 }
 
-int pointfail(char * str) {
-	return __printf(stdout, FAIL, "FAIL", str);
+int pointerrormsg(char *str, ...) {
+	point_generic(ERROR, "ERROR");
 }
 
-int pointerrormsg(char *str) {
-	return __printf(stdout, ERROR, "ERROR", str);
-}
-
-int pointunres(char * str) {
-	return __printf(stdout, UNRES, "UNRES", str);
-}
-
-int pointdone() {
-	return EXIT_SUCCESS;
+int pointunres(char * str, ...) {
+	point_generic(UNRES, "UNRES");
 }
 
 int testend(char * str) {
 	char shmem_path[500];
 	
+	/* if shared memory is not initialized, fail */
 	return_fail_on_no_shared_memory
 	printf("END:\t%s\n", str);
 	printf("Points: %ld, Pass: %ld, Fail: %ld, Unresolved: %ld, Errors:%ld\n",

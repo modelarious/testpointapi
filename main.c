@@ -95,7 +95,7 @@ int create_tree_test() {
 	
 	pointstart("create_tree(NULL)");
 	create_tree(NULL);
-	pointpass("create_tree(NULL)");
+	pointpass("create_tree(NULL) %d %s", 12, "hello");
 	
 	pointstart("pass in ptr assigned value of NULL");
 	tree_attr_t * attr = NULL;
