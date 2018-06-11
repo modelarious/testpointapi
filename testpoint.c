@@ -20,6 +20,7 @@ value should then fail the test with pointfail() */
 #include <stdarg.h>
 #include <string.h>
 #include <sys/types.h>
+#include <errno.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -329,6 +330,3 @@ int testend(char * str) {
 	
 	return EXIT_SUCCESS;
 }
-
-//va_list
-//vprintf
