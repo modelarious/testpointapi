@@ -126,7 +126,6 @@ int point_two() {
 }
 
 int unit_test_teststart() {
-	int rc;
 	int (*tests[])(void) = {
 		/* verify that contents of testInfo are 
 		correct when initialized with teststart()*/
@@ -159,13 +158,13 @@ int unit_test_teststart() {
 	size_t similar_funcs_len = sizeof(similar_funcs)/sizeof(similar_funcs[0]);
 	
 	simpleteststart("teststart() api test");
-	for (int test = 0; test < test_list_len; test++) {
+	for (size_t test = 0; test < test_list_len; test++) {
 		tests[test]();
 	}
 	simpletestend("teststart() api test");
 	
 	teststart("Starting testing");
-	for (int test = 0; test < similar_funcs_len; test++) {
+	for (size_t test = 0; test < similar_funcs_len; test++) {
 		simpleteststart("%s() api test", similar_func_names[test]);
 		similar_funcs[test]("My great message %d %s", 12, "hello world");
 		simpletestend("%s() api test", similar_func_names[test]);
