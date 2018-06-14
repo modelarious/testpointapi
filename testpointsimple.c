@@ -4,45 +4,54 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 
-int points, passes, fails, errors;
-	
-void simpletestnote(char * str) {
-	printf("NOTE:\t%s\n", str);
-}
+#define simple_point_generic(apiMessage) \
+	va_list arg; \
+	va_start (arg, str); \
+	printf("__%s:\t", apiMessage); \
+	vfprintf(stdout, str, arg); \
+	printf("\n"); \
+	va_end(arg)
 
-void simpleteststart(char * str) {
-	printf("START:\t%s\n", str);
+int points, passes, fails, errors;
+
+void simpleteststart(char * str, ...) {
+	simple_point_generic("STRT");
 	points = 0;
 	passes = 0;
 	fails = 0;
 	errors = 0;
 }
 
-void simplepointstart(char * str) {
-	printf("TEST:\t%s\n", str);
+void simpletestnote(char * str, ...) {
+	simple_point_generic("NOTE");
+}
+
+void simplepointstart(char * str, ...) {
+	simple_point_generic("TEST");
 	points++;
 }
 
-void simplepointpass(char * str) {
-	printf("PASS:\t%s\n", str);
+void simplepointpass(char * str, ...) {
+	simple_point_generic("PASS");
 	passes++;
 }
 
-void simplepointfail(char * str) {
-	printf("FAIL:\t%s\n", str);
+void simplepointfail(char * str, ...) {
+	simple_point_generic("FAIL");
 	fails++;
 }
 
-void simplepointerrormsg(char *str) {
-	printf("ERROR:\t%s\n", str);
+void simplepointerrormsg(char *str, ...) {
+	simple_point_generic("ERROR");
 	errors++;
 }
 
-void simpletestend(char * str) {
-	printf("END:\t%s\n", str);
-	printf("Points: %d, Pass: %d, Fail: %d, Errors:%d\n",
+void simpletestend(char * str, ...) {
+	simple_point_generic("END");
+	printf("__Points: %d, Pass: %d, Fail: %d, Errors:%d\n",
 		points,
 		passes,
 		fails,
