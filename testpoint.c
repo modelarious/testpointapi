@@ -18,6 +18,16 @@ But this would have added a ton of unneeded overhead.
 
 /* must call before forking */
 
+/* TODO: make testend() formatted as well
+consider state machine to enforce ordering of api calls
+*/
+
+/* make testpointbeginminor();, testpointbeginmajor(); 
+POINT 1.1:
+POINT 2.1:
+POINT 2.2:
+*/
+
 #ifndef EOK
 #define EOK 0
 #endif
@@ -36,22 +46,24 @@ But this would have added a ton of unneeded overhead.
 
 #define SHMEM_PATH "/tmp/testpoint"
 
-/* check if test_info is uninitialized, if that is the case, 
+/* check if testInfo is uninitialized, if that is the case, 
 print a message and return a failure */
-#define return_fail_on_no_shared_memory if (test_info == NULL) { \
-                                            fprintf(stderr, "ERROR:\ttest_info not initialized. "\
-                                            "Make sure to call teststart()\n"); \
-                                            return EXIT_FAILURE; \
-                                        }
+#define return_fail_on_no_shared_memory \
+if (testInfo == NULL) { \
+	fprintf(stderr, "ERROR:\ttestInfo not initialized. "\
+    "Make sure to call teststart()\n"); \
+    return EXIT_FAILURE; \
+}
 
-/* will expand into a function that uses va_list to pass in a formatted string to __printf */
+/* will expand into a function that uses va_list 
+to pass in a formatted string to __printf */
 #define point_generic(state, message) \
 	int rc;	\
 	va_list arg; \
 	/* points to the last arg before the elipsis */ \
 	va_start (arg, str); \
 	/* pass the argument list into __printf */ \
-	rc = __printf(arg, stdout, state, message, str); \
+	rc = __printf(arg, state, message, str); \
 	va_end(arg); \
 	return rc
 /* example of above macro:
@@ -68,7 +80,7 @@ int pointpass(char * str, ...) {
 	// points to the last arg before the elipsis
 	va_start (arg, str);
 	// pass the argument list into __printf
-	rc = __printf(arg, stdout, PASS, "PASS", str);
+	rc = __printf(arg, PASS, "PASS", str);
 	va_end(arg);
 	return rc;
 }
@@ -86,13 +98,16 @@ typedef enum {
 } test_state_t;
 
 typedef struct {
-	long test_results[NUMBER_OF_STATES]; /* array indexed by test_state_t */
-	pthread_mutex_t mutexes[NUMBER_OF_STATES]; /* lock to modify test_results */
-	pthread_mutex_t exclusive_print; /* lock so only one test point message can occur at a time */
-} test_info_t;
+	long testResults[NUMBER_OF_STATES]; /* array indexed by test_state_t */
+	pthread_mutex_t mutexes[NUMBER_OF_STATES]; /* lock to modify testResults */
+	pthread_mutex_t exclusivePrint; /* lock so only one test point message can occur at a time */
+	FILE * filestream; /* buffer to print to, makes testing this code a lot easier */
+	long testPointMajor;
+	long testPointMinor;
+} testInfo_t;
 
 /* in shared memory */
-test_info_t * test_info = NULL;
+testInfo_t * testInfo = NULL;
 
 /* print out a descriptive error message */
 void error_print(char *funcName, int rc) {
@@ -108,14 +123,14 @@ int increment_state(test_state_t state) {
 	return_fail_on_no_shared_memory
 
 	/* increase occurrence of passed in state */
-	if ((rc = pthread_mutex_lock(&test_info->mutexes[state])) != EOK) {
+	if ((rc = pthread_mutex_lock(&testInfo->mutexes[state])) != EOK) {
 		error_print("pthread_mutex_lock", rc);
 		return EXIT_FAILURE;
 	}
 	
-	test_info->test_results[state]++;
+	testInfo->testResults[state]++;
 
-	if ((rc = pthread_mutex_unlock(&test_info->mutexes[state])) != EOK) {
+	if ((rc = pthread_mutex_unlock(&testInfo->mutexes[state])) != EOK) {
 		error_print("pthread_mutex_unlock", rc);
 		return EXIT_FAILURE;
 	}
@@ -127,7 +142,7 @@ int increment_state(test_state_t state) {
 /* print the formatted output passed into a test point function,
  * increment the occurrence count of the passed in "state" */
  /* maybe store every message in a database? XXX */
-int __printf (va_list arg, FILE * filestream, test_state_t state, char *apiMessage, char * str)
+int __printf (va_list arg, test_state_t state, char *apiMessage, char * str)
 {
 	int rc;
 	
@@ -136,7 +151,7 @@ int __printf (va_list arg, FILE * filestream, test_state_t state, char *apiMessa
 	
 	/* to ensure only one message is ever printed at a time,
 	 * lock the exclusive print mutex */
-	if ((rc = pthread_mutex_lock(&test_info->exclusive_print)) != EOK) {
+	if ((rc = pthread_mutex_lock(&testInfo->exclusivePrint)) != EOK) {
 		error_print("pthread_mutex_lock", rc);
 		return EXIT_FAILURE;
 	}
@@ -144,14 +159,14 @@ int __printf (va_list arg, FILE * filestream, test_state_t state, char *apiMessa
 	/* print: 
 		apiMessage ":\t" str "\n" 
 	*/
-	fprintf(filestream, "%s:\t", apiMessage);
-	vfprintf(filestream, str, arg);
-	fprintf(filestream, "\n");
+	fprintf(testInfo->filestream, "%s:\t", apiMessage);
+	vfprintf(testInfo->filestream, str, arg);
+	fprintf(testInfo->filestream, "\n");
 	va_end (arg);
-	fflush(filestream);
+	fflush(testInfo->filestream);
     
     /* done with this mutex */
-	if ((rc = pthread_mutex_unlock(&test_info->exclusive_print)) != EOK) {
+	if ((rc = pthread_mutex_unlock(&testInfo->exclusivePrint)) != EOK) {
 		error_print("pthread_mutex_unlock", rc);
 		return EXIT_FAILURE;
 	}
@@ -177,14 +192,14 @@ int __printf (va_list arg, FILE * filestream, test_state_t state, char *apiMessa
 }
 
 /* sets values in shared memory to defaults, initializes mutexes */
-int init_test_info() {
+int init_testInfo(FILE * filestream) {
 	pthread_mutexattr_t attr;
 	int rc;
 	
-	/* setup test_info */
-	/* if test_info has been initialized, do the following: */
-	if (test_info) {
-		memset(test_info, 0, sizeof(test_info_t));
+	/* setup testInfo */
+	/* if testInfo has been initialized, do the following: */
+	if (testInfo) {
+		memset(testInfo, 0, sizeof(testInfo_t));
 		
 		/* create attributes */
 		if ((rc = pthread_mutexattr_init(&attr)) != EOK) {
@@ -202,34 +217,36 @@ int init_test_info() {
 		
 		/* initialize mutexes */
 		for (int i = PASS; i < NUMBER_OF_STATES; i++) {
-			if ((rc = pthread_mutex_init(&test_info->mutexes[i], &attr)) != EOK) {
+			if ((rc = pthread_mutex_init(&testInfo->mutexes[i], &attr)) != EOK) {
 				error_print("pthread_mutex_init", rc);
 				return EXIT_FAILURE;
 			}
 		}
 		
 		/* initialize mutex for exclusive printing */
-		if ((rc = pthread_mutex_init(&test_info->exclusive_print, &attr)) != EOK) {
+		if ((rc = pthread_mutex_init(&testInfo->exclusivePrint, &attr)) != EOK) {
 			error_print("pthread_mutex_init", rc);
 			return EXIT_FAILURE;
 		}
 		
+		testInfo->filestream = filestream;
+		
 		return EXIT_SUCCESS;
 	}
 	
-	/* test_info was not yet initialized */
+	/* testInfo was not yet initialized */
 	return EXIT_FAILURE;
 }
 	
-/* returns success on already initialized or successful initialization */
+/* returns failure on already initialized or successful initialization */
 int init_shared_memory() {
 	int fd, rc;
 	char shmem_path[500];
 	
-	/* check if test_info is being initialized again before having called testend() */
-	if (test_info) {
-		fprintf(stderr, "test_info already initialized\n");
-		return EXIT_SUCCESS;
+	/* check if testInfo is being initialized again before having called testend() */
+	if (testInfo) {
+		fprintf(stderr, "testInfo already initialized\n");
+		return EXIT_FAILURE;
 	}
 	
 	/* set the shared memory path to ${SHMEM_PATH}_${PID} */
@@ -250,7 +267,7 @@ int init_shared_memory() {
 	}
 	
 	/* resize using fd */
-	rc = ftruncate(fd, sizeof(test_info_t)); //size of test_info_t
+	rc = ftruncate(fd, sizeof(testInfo_t)); //size of testInfo_t
 	
 	/* error handle */
 	if (rc != EOK) {
@@ -258,8 +275,8 @@ int init_shared_memory() {
 		return EXIT_FAILURE;
 	}
 	
-	/* map shared memory to test_info */
-	test_info = mmap(NULL, sizeof(test_info_t), 
+	/* map shared memory to testInfo */
+	testInfo = mmap(NULL, sizeof(testInfo_t), 
 		//PROT_EXEC|
 		PROT_READ|
 		PROT_WRITE, /* read/write */
@@ -267,7 +284,7 @@ int init_shared_memory() {
 		fd, 0 );
 	
 	/* error handle */
-	if (test_info == MAP_FAILED) {
+	if (testInfo == MAP_FAILED) {
 		error_print("mmap", errno);
 		return EXIT_FAILURE;
 	}
@@ -280,13 +297,13 @@ int init_shared_memory() {
 
 /* initialize all required data for testing to begin */
 int testinit() {
-	/* initialize shared memory and mmap it to test_info pointer */
+	/* initialize shared memory and mmap it to testInfo pointer */
 	if (init_shared_memory() != EXIT_SUCCESS) {
 		return EXIT_FAILURE;
 	}
 	
 	/* set default values and initialize mutexes */
-	if (init_test_info() != EXIT_SUCCESS) {
+	if (init_testInfo(stdout) != EXIT_SUCCESS) {
 		return EXIT_FAILURE;
 	}
 	
@@ -341,26 +358,33 @@ int pointerrormsg(char *str, ...) {
 	point_generic(ERROR, "ERROR");
 }
 
-
 /* called at the end of testing procedure to print
 out a summary of the points and destruct all shared
 memory */
-int testend(char * str) {
+/* rework this to call a function that tears down shared memory XXX */
+int testend(char * str, ...) {
 	char shmem_path[500];
+	int rc;
+	va_list arg;
 	
 	/* if shared memory is not initialized, fail */
 	return_fail_on_no_shared_memory
+
+	// points to the last arg before the elipsis
+	va_start (arg, str);
+	// pass the argument list into __printf
+	rc = __printf(arg, POINT, "END", str);
+	va_end(arg);
 	
-	printf("END:\t%s\n", str);
 	printf("Points: %ld, Pass: %ld, Fail: %ld, Unresolved: %ld, Errors:%ld\n",
-		test_info->test_results[POINT],
-		test_info->test_results[PASS],
-		test_info->test_results[FAIL],
-		test_info->test_results[UNRES],
-		test_info->test_results[ERROR]);
+		testInfo->testResults[POINT],
+		testInfo->testResults[PASS],
+		testInfo->testResults[FAIL],
+		testInfo->testResults[UNRES],
+		testInfo->testResults[ERROR]);
 	
 	/* unmap it from our process space */
-	if (munmap(test_info, sizeof(test_info)) != EOK) {
+	if (munmap(testInfo, sizeof(testInfo)) != EOK) {
 		error_print("munmap", errno);
 		return EXIT_FAILURE;
 	}
@@ -375,7 +399,7 @@ int testend(char * str) {
 	}
 	
 	/* set it to NULL explicitly */
-	test_info = NULL;
+	testInfo = NULL;
 	
-	return EXIT_SUCCESS;
+	return rc;
 }
