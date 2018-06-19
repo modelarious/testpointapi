@@ -88,6 +88,7 @@ If you really need it, recompile the test point api with a larger MINORTESTPOINT
 #include <fcntl.h>           /* For O_* constants */
 
 #define SHMEM_PATH "/tmp/testpoint"
+#define MINORTESTPOINTLIMIT 50000 /* allows POINT 1.1.1.1.1... MINORTESTPOINTLIMIT times */
 
 /* check if testInfo is uninitialized, if that is the case, 
 print a message and return a failure */
@@ -145,8 +146,9 @@ typedef struct {
 	pthread_mutex_t mutexes[NUMBER_OF_STATES]; /* lock to modify testResults */
 	pthread_mutex_t exclusivePrint; /* lock so only one test point message can occur at a time */
 	FILE * filestream; /* buffer to print to, makes testing this code a lot easier */
-	long testPointMajor;
-	long testPointMinor;
+	int testPointId[MINORTESTPOINTLIMIT]; /* contains the identifier for test point 
+	                                         ID, so {1, 1, 4} would produce "POINT 1.1.4:" */
+	int testPointIdDepth;
 } testInfo_t;
 
 /* in shared memory */
@@ -158,6 +160,9 @@ void error_print(char *funcName, int rc) {
 		rc, strerror(rc));
 	fflush(stderr);
 }
+
+void print_test_point_id() {
+	
 
 /* lock associated mutex, increase test point, unlock associated mutex */
 int increment_state(test_state_t state) {
