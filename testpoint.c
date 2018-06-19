@@ -18,14 +18,57 @@ But this would have added a ton of unneeded overhead.
 
 /* must call before forking */
 
+
 /* TODO: make testend() formatted as well
 consider state machine to enforce ordering of api calls
 */
 
-/* make testpointbeginminor();, testpointbeginmajor(); 
-POINT 1.1:
-POINT 2.1:
-POINT 2.2:
+/* make testpointminor();, testpointminorend(); 
+
+decide if you want testpointminor() to start a test point with "POINT" or if that should be a separate call
+
+
+teststart()
+pointstart()
+POINT 1:
+testpointminor()
+	POINT 1.1:
+pointpass()
+	PASS 1.1:
+pointstart()
+	POINT 1.2:
+testpointminor()
+		POINT 1.2.1:
+pointpass()
+		PASS 1.2.1:
+pointstart()
+		POINT 1.2.2:
+pointfail()
+		FAIL 1.2.2:
+testpointminorend()
+pointfail()
+	FAIL 1.2:
+testpointminorend()
+pointfail()
+FAIL 1:
+
+pointstart()
+POINT 2:
+...
+
+PASS 2:
+
+testpointminorend()
+TEST POINT API ERROR: testpointminorend() called with no minor test point in progress
+
+while (1) {
+	testpointminor();
+}
+
+eventually:
+POINT "1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1"*1000:
+TEST POINT API ERROR: Do you really need this resolution of test points? Maybe consider splitting this into multiple files?
+If you really need it, recompile the test point api with a larger MINORTESTPOINTLIMIT
 */
 
 #ifndef EOK
