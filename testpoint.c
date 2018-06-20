@@ -1,6 +1,5 @@
 /*XXXXXXXXX must be initialized before any forking is done or else the other processes won't be able to access it */
-/* timestamp in struct? cleanup goes and looks for old timestamps */
-/* should I dup2() the stderr and stdout file descriptors incase someone closes them? */
+/* should I dup2() the stderr and stdout file descriptors incase someone closes them as part of a test case? */
 
 /* anything but ERROR ends testpoint. Error is not a test state, unres, fail and pass are. It is up to you to 
 call pointfail after errors.  Recommended: create functions to run each testpoint.  if any error codes
@@ -23,54 +22,6 @@ But this would have added a ton of unneeded overhead.
 consider state machine to enforce ordering of api calls
 */
 
-/* make testpointminor();, testpointminorend(); 
-
-decide if you want testpointminor() to start a test point with "POINT" or if that should be a separate call
-
-
-teststart()
-pointstart()
-POINT 1:
-testpointminor()
-	POINT 1.1:
-pointpass()
-	PASS 1.1:
-pointstart()
-	POINT 1.2:
-testpointminor()
-		POINT 1.2.1:
-pointpass()
-		PASS 1.2.1:
-pointstart()
-		POINT 1.2.2:
-pointfail()
-		FAIL 1.2.2:
-testpointminorend()
-pointfail()
-	FAIL 1.2:
-testpointminorend()
-pointfail()
-FAIL 1:
-
-pointstart()
-POINT 2:
-...
-
-PASS 2:
-
-testpointminorend()
-TEST POINT API ERROR: testpointminorend() called with no minor test point in progress
-
-while (1) {
-	testpointminor();
-}
-
-eventually:
-POINT "1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1"*1000:
-TEST POINT API ERROR: Do you really need this resolution of test points? Maybe consider splitting this into multiple files?
-If you really need it, recompile the test point api with a larger MINORTESTPOINTLIMIT
-*/
-
 #ifndef EOK
 #define EOK 0
 #endif
@@ -88,20 +39,19 @@ If you really need it, recompile the test point api with a larger MINORTESTPOINT
 #include <fcntl.h>           /* For O_* constants */
 
 #define SHMEM_PATH "/tmp/testpoint"
-#define MINORTESTPOINTLIMIT 50000 /* allows POINT 1.1.1.1.1... MINORTESTPOINTLIMIT times */
 
 /* check if testInfo is uninitialized, if that is the case, 
 print a message and return a failure */
-#define return_fail_on_no_shared_memory \
+#define return_fail_on_no_shared_memory {\
 if (testInfo == NULL) { \
 	fprintf(stderr, "ERROR:\ttestInfo not initialized. "\
     "Make sure to call teststart()\n"); \
     return EXIT_FAILURE; \
-}
+}}
 
 /* will expand into a function that uses va_list 
 to pass in a formatted string to __printf */
-#define point_generic(state, message) \
+#define point_generic(state, message) {\
 	int rc;	\
 	va_list arg; \
 	/* points to the last arg before the elipsis */ \
@@ -109,7 +59,8 @@ to pass in a formatted string to __printf */
 	/* pass the argument list into __printf */ \
 	rc = __printf(arg, state, message, str); \
 	va_end(arg); \
-	return rc
+	return rc; \
+}
 /* example of above macro:
 
 int pointpass(char * str, ...) {
@@ -145,10 +96,9 @@ typedef struct {
 	long testResults[NUMBER_OF_STATES]; /* array indexed by test_state_t */
 	pthread_mutex_t mutexes[NUMBER_OF_STATES]; /* lock to modify testResults */
 	pthread_mutex_t exclusivePrint; /* lock so only one test point message can occur at a time */
-	FILE * filestream; /* buffer to print to, makes testing this code a lot easier */
-	int testPointId[MINORTESTPOINTLIMIT]; /* contains the identifier for test point 
-	                                         ID, so {1, 1, 4} would produce "POINT 1.1.4:" */
-	int testPointIdDepth;
+	FILE * filestream; /* buffer to print to, makes testing this code a lot easier and 
+	                      allows output to be directed to a file if stdout and stderr need 
+	                      to be closed as part of a test case*/
 } testInfo_t;
 
 /* in shared memory */
@@ -161,14 +111,14 @@ void error_print(char *funcName, int rc) {
 	fflush(stderr);
 }
 
-void print_test_point_id() {
+void print_test_point_id() {}
 	
 
 /* lock associated mutex, increase test point, unlock associated mutex */
 int increment_state(test_state_t state) {
 	int rc;
 	/* if shared memory is not initialized, fail */
-	return_fail_on_no_shared_memory
+	return_fail_on_no_shared_memory;
 
 	/* increase occurrence of passed in state */
 	if ((rc = pthread_mutex_lock(&testInfo->mutexes[state])) != EOK) {
@@ -195,7 +145,7 @@ int __printf (va_list arg, test_state_t state, char *apiMessage, char * str)
 	int rc;
 	
 	/* if shared memory is not initialized, fail */
-	return_fail_on_no_shared_memory
+	return_fail_on_no_shared_memory;
 	
 	/* to ensure only one message is ever printed at a time,
 	 * lock the exclusive print mutex */
@@ -409,14 +359,13 @@ int pointerrormsg(char *str, ...) {
 /* called at the end of testing procedure to print
 out a summary of the points and destruct all shared
 memory */
-/* rework this to call a function that tears down shared memory XXX */
 int testend(char * str, ...) {
 	char shmem_path[500];
 	int rc;
 	va_list arg;
 	
 	/* if shared memory is not initialized, fail */
-	return_fail_on_no_shared_memory
+	return_fail_on_no_shared_memory;
 
 	// points to the last arg before the elipsis
 	va_start (arg, str);
