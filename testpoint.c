@@ -38,7 +38,7 @@ consider state machine to enforce ordering of api calls
 #include <sys/stat.h>        /* For mode constants */
 #include <fcntl.h>           /* For O_* constants */
 
-#define SHMEM_PATH "/tmp/testpoint"
+#define SHMEM_PATH "/testpointapiShmem"
 
 /* check if testInfo is uninitialized, if that is the case, 
 print a message and return a failure */
@@ -81,6 +81,11 @@ int pointpass(char * str, ...) {
 }
 */
 
+void print_test_point_id(void);
+int init_shared_memory(void);
+int testinit(void);
+int unit_test_testend(void);
+
 typedef enum {
 	PASS=0,
 	FAIL,
@@ -98,7 +103,7 @@ typedef struct {
 	pthread_mutex_t exclusivePrint; /* lock so only one test point message can occur at a time */
 	FILE * filestream; /* buffer to print to, makes testing this code a lot easier and 
 	                      allows output to be directed to a file if stdout and stderr need 
-	                      to be closed as part of a test case*/
+	                      to be closed as part of a test case */ //XXX DO YOU REALLY NEED THIS?
 } testInfo_t;
 
 /* in shared memory */
@@ -253,7 +258,6 @@ int init_shared_memory() {
 	/* open shared memory object */
 	fd = shm_open(shmem_path, 
 		O_CREAT| /* create if non existant */
-		//O_TRUNC| /* truncate to 0 if already existing */
 		O_RDWR, /* open for reading and writing */
 		S_IRWXU /* user has read, write and execute */
 	);

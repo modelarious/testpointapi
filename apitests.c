@@ -1,11 +1,27 @@
+/* make a function that runs all the unit tests.  Then you can just fork a 
+new process and run all the tests again to verify that it works in a forked process 
+and do the same with another thread XXX */
+
+
 #include "testpointsimple.c"
 #include "testpoint.c"
 #include <time.h>
 
+int verify_testInfo(void);
+int point_one_teststart(void);
+int point_two_teststart(void);
+int unit_test_teststart(void);
+int unit_test_increment_api(void);
+int main(void);
+
 /* this is not a guide of how to use the testpoint.c api, 
 as I have to use testpointsimple.c to test it */
 
-
+typedef struct {
+	int (*func)(char *, ...);
+	char * funcName;
+	test_state_t state;
+} test_case_info_t;
 
 int verify_testInfo() {
 	int rc;
@@ -57,7 +73,7 @@ int verify_testInfo() {
 }
 
 /* returns EXIT_FAILURE on fail, EXIT_SUCCESS on pass */
-int point_one() {
+int point_one_teststart() {
 
 	simplepointstart("call test start and verify contents of default shared memory object");
 	
@@ -101,7 +117,7 @@ int point_one() {
 	return EXIT_SUCCESS;
 }
 
-int point_two() {
+int point_two_teststart() {
 	simplepointstart("calling teststart() twice returns an error");
 	
 	/* creates shared memory object in the background and populates it */
@@ -129,33 +145,14 @@ int unit_test_teststart() {
 	int (*tests[])(void) = {
 		/* verify that contents of testInfo are 
 		correct when initialized with teststart()*/
-		point_one,
+		point_one_teststart,
 		
 		/* verify that calling teststart() twice will
 		return an error */
-		point_two
-	};
-
-	int (*similar_funcs[])(char * str, ...) = {
-		pointpass,
-		pointfail,
-		pointunres,
-	};
-	
-	char * similar_func_names[] = {
-		"pointpass",
-		"pointfail",
-		"pointunres",
-	};
-	
-	test_state_t associated_test_states[] = {
-		PASS,
-		FAIL,
-		UNRES
+		point_two_teststart
 	};
 	
 	size_t test_list_len = sizeof(tests)/sizeof(tests[0]);
-	size_t similar_funcs_len = sizeof(similar_funcs)/sizeof(similar_funcs[0]);
 	
 	simpleteststart("teststart() api test");
 	for (size_t test = 0; test < test_list_len; test++) {
@@ -163,22 +160,101 @@ int unit_test_teststart() {
 	}
 	simpletestend("teststart() api test");
 	
-	teststart("Starting testing");
-	for (size_t test = 0; test < similar_funcs_len; test++) {
-		simpleteststart("%s() api test", similar_func_names[test]);
-		similar_funcs[test]("My great message %d %s", 12, "hello world");
-		simpletestend("%s() api test", similar_func_names[test]);
+	return EXIT_SUCCESS;
+}
+
+int unit_test_testend() {
+	int (*tests[])(void) = {
+		/* verify that contents of testInfo are 
+		correct when initialized with teststart()*/
+		point_one_teststart,
+		
+		/* verify that calling teststart() twice will
+		return an error */
+		point_two_teststart
+	};
+	
+	size_t test_list_len = sizeof(tests)/sizeof(tests[0]);
+	
+	simpleteststart("teststart() api test");
+	for (size_t test = 0; test < test_list_len; test++) {
+		tests[test]();
 	}
-	testend("done testing testing");
+	simpletestend("teststart() api test");
+	
+	return EXIT_SUCCESS;
+}
+
+int unit_test_increment_api() {
+	
+	test_case_info_t caseInfo[] = {
+		{pointpass,  "pointpass",  PASS},
+		{pointfail,  "pointfail",  FAIL},
+		{pointunres, "pointunres", UNRES},
+		{pointerrormsg, "pointerrormsg", ERROR},
+	};
+	size_t caseInfoLen = 4;
+	
+	long before;
+	int rc;
+	
+	simpleteststart("incrementing api test");
+	
+	/* test point to verify that the shared memory object has ben created, if not,
+	   abort test case as many next points would fail */
+	simplepointstart("Create shared memory object to run tests");
+	
+	/* call teststart() to initialize the shared memory object */
+	if (teststart("Starting testing") != EXIT_SUCCESS) {
+		simplepointfail("Couldn't initialize object using teststart()");
+		simpletestend("incrementing api test"); //XXX could the entire logic be moved and a function created like so: "
+		                                        //void run_test() { simpleteststart(); all_the_logic_in_separate_function(); simpletestend(); }
+		return EXIT_FAILURE;
+	} else {
+		simplepointpass("Initialized object using teststart()");
+	}
+	
+	//fwrite(stdout, sizeof(char), );
+	//open_memstream();
+	
+	/* run test cases */
+	for (size_t test = 0; test < caseInfoLen; test++) {
+		
+		before = testInfo->testResults[caseInfo[test].state];
+
+		simplepointstart("Use of function %s() should increase value of related state", caseInfo[test].funcName);
+		rc = caseInfo[test].func("My great message %d %s", 12, "hello world");
+		
+		/* if the state hasn't increased by one, fail point */
+		if (before + 1 != testInfo->testResults[caseInfo[test].state]) {
+			
+			/* important to verify if it fails, it returns the correct code */
+			if (rc != EXIT_FAILURE) {
+				simplepointerrormsg("%s() did not return a failure", caseInfo[test].funcName);
+			}
+			simplepointfail("%s() failed to increase related state", caseInfo[test].funcName);
+			
+		/* if function returned a failure, fail as well */
+		} else if (rc == EXIT_FAILURE) {
+			simplepointfail("%s() returned a failure", caseInfo[test].funcName);
+		
+		} else {
+			simplepointpass("%s() increased related state", caseInfo[test].funcName);
+		}
+	}
+	testend("done testing, removing shared memory");
+	
+	simpletestend("incrementing api test");
+	
 	
 	return EXIT_SUCCESS;
 }
 
 /* call testend() before teststart() XXX*/
 
-
-	
-
 int main() {
 	unit_test_teststart();
+	unit_test_increment_api();
 }
+
+
