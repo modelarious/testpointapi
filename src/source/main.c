@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include "testpoint.c"
+#include "../tests/testpoint.c"
 
 
 

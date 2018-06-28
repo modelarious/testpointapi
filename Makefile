@@ -1,26 +1,31 @@
 flags=-Wall -Wextra -Wpedantic -Wnull-dereference -Wfloat-equal -Wshadow -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wstrict-overflow=5 -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code
 save=-save-temps=obj -c
-loc=bin
+binLoc=bin
+srcLoc=src/source
+testLoc=src/tests
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 	libs=-lpthread -lrt
 endif
 ifeq ($(UNAME_S),Darwin)
-	libs=-lpthread
+	libs=
 endif
 
-all: apitests main
+all: source tests
+
+source: main
+tests: apitests
 
 inspect: inspect-apitests
 
-apitests: apitests.c testpoint.c
-	gcc $(flags) -o $(loc)/apitests apitests.c $(libs)
+apitests: $(testLoc)/apitests.c $(testLoc)/testpoint.c
+	gcc $(flags) -o $(binLoc)/apitests $(testLoc)/apitests.c $(libs)
 
-main: main.c testpoint.c
-	gcc $(flags) -o $(loc)/main main.c $(libs)
+main: $(srcLoc)/main.c $(testLoc)/testpoint.c
+	gcc $(flags) -o $(binLoc)/main $(srcLoc)/main.c $(libs)
 
-inspect-apitests: apitests.c testpoint.c
-	gcc $(flags) $(save) -o $(loc)/apitests apitests.c $(libs)
+inspect-apitests: $(testLoc)/apitests.c $(testLoc)/testpoint.c
+	gcc $(flags) $(save) -o $(binLoc)/apitests $(testLoc)/apitests.c $(libs)
 
 clean:
-	rm -rf $(loc)/*
+	rm -rf $(binLoc)/*
