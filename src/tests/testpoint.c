@@ -116,7 +116,7 @@ void error_print(char *funcName, int rc) {
 	fflush(stderr);
 }
 
-void print_test_point_id() {}
+
 	
 
 /* lock associated mutex, increase test point, unlock associated mutex */
@@ -242,6 +242,7 @@ int init_testInfo(FILE * filestream) {
 }
 	
 /* returns failure on already initialized or successful initialization */
+//XXX https://stackoverflow.com/questions/5656530/how-to-use-shared-memory-with-linux-in-c
 int init_shared_memory() {
 	int fd, rc;
 	char shmem_path[500];

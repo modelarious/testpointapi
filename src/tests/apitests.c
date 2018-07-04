@@ -2,6 +2,45 @@
 new process and run all the tests again to verify that it works in a forked process 
 and do the same with another thread XXX */
 
+/* basic important features:
+	Points increase at the right time
+	States increase at the right time
+	Calling teststart twice is an error
+	calling teststart in a second process after forking is an error
+	XXX Can you detect when someone tries to call teststart after forking instead of before?
+	must call teststart before calling any test point functions
+	testend twice is an error
+	testend must be called after teststart
+	using the file pointer in the testpoint makes all processes and all threads write to the same file
+	the file is written to with mutexes and a ton of threads writing to the log at the same time will not cause
+	corruption
+	almost all the above in separate threads and processes
+	can't just be run in a separate thread or process, must be inter communicated to ensure
+	multiple processes are behaving correctly together.  One idea is to lock three of them with condvars
+	and make them rotate in which one starts the point, and which one passes the point.
+	
+	run multiple tests at the same time (spawn five of the same processes, all outputting to different files
+	and they have no problem with shared memory name conflicts)
+	
+	basic speed test to see performance in: 
+		1 thread in 1 process, 
+		50 threads in a process, 
+		1 thread in two processes, 
+		50 threads in two processes
+		50 threads in many processes
+	
+	will be used to test the performance hit of adding in a finite state machine that forces 
+	pointbegin() to be called before being able to call pointpass()
+	
+	Could make the state machine a compile time option, 
+	so the extra if statements aren't in there if unnecessary
+	
+	lock mutex at start of test point and unlock at the end, makes only one test point run at a time
+	Make it switch-on-able at compile time and then have the ability to turn it on or off via api
+	
+	pass in shmem name, each program that includes the testpointapi will have their own pointer but 
+	will need an individual name for two tests to run at the same time
+*/
 
 #include "testpointsimple.c"
 #include "testpoint.c"
@@ -12,6 +51,7 @@ int point_one_teststart(void);
 int point_two_teststart(void);
 int unit_test_teststart(void);
 int unit_test_increment_api(void);
+int unit_test_fork_increment(void);
 int main(void);
 
 /* this is not a guide of how to use the testpoint.c api, 
@@ -22,6 +62,19 @@ typedef struct {
 	char * funcName;
 	test_state_t state;
 } test_case_info_t;
+
+typedef struct {
+	int (*func)(void);
+	char * testMessage;
+} unit_test_info_t;
+
+test_case_info_t caseInfo[] = {
+	{pointpass,  "pointpass",  PASS},
+	{pointfail,  "pointfail",  FAIL},
+	{pointunres, "pointunres", UNRES},
+	{pointerrormsg, "pointerrormsg", ERROR},
+};
+size_t caseInfoLen = 4;
 
 int verify_testInfo() {
 	int rc;
@@ -186,19 +239,10 @@ int unit_test_testend() {
 }
 
 int unit_test_increment_api() {
-	
-	test_case_info_t caseInfo[] = {
-		{pointpass,  "pointpass",  PASS},
-		{pointfail,  "pointfail",  FAIL},
-		{pointunres, "pointunres", UNRES},
-		{pointerrormsg, "pointerrormsg", ERROR},
-	};
-	size_t caseInfoLen = 4;
-	
 	long before;
 	int rc;
 	
-	simpleteststart("incrementing api test");
+	//simpleteststart("incrementing api test");
 	
 	/* test point to verify that the shared memory object has ben created, if not,
 	   abort test case as many next points would fail */
@@ -213,7 +257,7 @@ int unit_test_increment_api() {
 	} else {
 		simplepointpass("Initialized object using teststart()");
 	}
-	
+		
 	//fwrite(stdout, sizeof(char), );
 	//open_memstream();
 	
@@ -244,17 +288,36 @@ int unit_test_increment_api() {
 	}
 	testend("done testing, removing shared memory");
 	
-	simpletestend("incrementing api test");
+	//simpletestend("incrementing api test");
 	
 	
 	return EXIT_SUCCESS;
 }
 
+int unit_test_fork_increment() {
+	simpleteststart("fork test");
+	//run_
+	simpletestend("fork test");
+	return 0;
+}
+	
+
 /* call testend() before teststart() XXX*/
 
 int main() {
-	unit_test_teststart();
-	unit_test_increment_api();
+	unit_test_info_t unitTests[] = {
+	{unit_test_teststart,  "teststart() api test"},
+	{unit_test_increment_api, "state incrementing api test"}
+	};
+	size_t unitTestsSize = 2;
+	
+	for (size_t i=0; i < unitTestsSize; i++) {
+		simpleteststart(unitTests[i].testMessage);
+		unitTests[i].func();
+		simpletestend(unitTests[i].testMessage);
+	}
+	//unit_test_teststart();
+	//unit_test_increment_api();
 }
 
 
