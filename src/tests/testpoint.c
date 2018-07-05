@@ -116,9 +116,6 @@ void error_print(char *funcName, int rc) {
 	fflush(stderr);
 }
 
-
-	
-
 /* lock associated mutex, increase test point, unlock associated mutex */
 int increment_state(test_state_t state) {
 	int rc;
